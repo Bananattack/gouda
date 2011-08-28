@@ -1,0 +1,139 @@
+package camera
+    def follow_player: begin
+        let border_lo = t0
+        let border_hi = t1
+        let move = t2
+        
+        a: get #0, put @move
+        a: get @camera_x_lo, add #0x60, put @border_lo
+        a: get @camera_x_hi, addc #0, put @border_hi        
+        a: get @player_x_hi, cmp @border_hi
+        if < then
+            a: get #DIRECTION_LEFT + 1, put @move
+        elseif = then
+            a: get @player_x_lo, cmp @border_lo
+            if < then
+                a: get #DIRECTION_LEFT + 1, put @move
+            end
+        end
+        
+        a: get @camera_x_lo, add #0x90, put @border_lo
+        a: get @camera_x_hi, addc #0, put @border_hi        
+        a: cmp @player_x_hi
+        if < then
+            a: get #DIRECTION_RIGHT + 1, put @move
+        elseif = then
+            a: get @border_lo, cmp @player_x_lo
+            if < then
+                a: get #DIRECTION_RIGHT + 1, put @move
+            end
+        end
+        
+        a: get @move
+        if not zero then
+            a: cmp #DIRECTION_RIGHT + 1
+            goto move_right when =
+            goto move_left // otherwise
+        else
+            return
+        end
+    end
+
+    def move_left: begin
+        a: get @camera_x_lo
+        if zero then
+            a: get @camera_x_hi
+            if not zero then
+                @camera_x_hi: dec
+            else
+                @camera_x_lo: inc // Cancel out decrement.
+            end
+        end
+        @camera_x_lo: dec
+        
+        goto buffer_column_left
+    end
+    
+    def move_right: begin
+        a: get @camera_x_hi, add #1, cmp @map_width
+        if < then
+            @camera_x_lo: inc                
+            if zero then                    
+                @camera_x_hi: inc
+            end
+        end
+        
+        goto buffer_column_right
+    end
+    
+    def buffer_column_left: begin
+        a: get @camera_x_hi, cmp #0
+        if >= then
+            a: get #<tile_top_left, put @t0, get #>tile_top_left, put @t1
+            a: get @world_ptr_lo, put @t2
+            a: get @camera_x_hi, add @world_ptr_hi, put @t3
+            a: get @camera_x_lo, shr, shr, shr, put @t4
+            a: get @camera_x_hi, and #1, put @t5
+            a: get @vram_loader.code_pointer, put @t6
+            a: get @(vram_loader.code_pointer + 1), put @t7
+            call tilemap.update_tile_buffer
+            
+            // Increment code pointer.
+            a: get @t6, put @vram_loader.code_pointer
+            a: get @t7, put @(vram_loader.code_pointer + 1)
+
+            a: get #<tile_attribute, put @t0, get #>tile_attribute, put @t1
+            a: get @world_ptr_lo, put @t2
+            a: get @camera_x_hi, add @world_ptr_hi, put @t3
+            a: get @camera_x_lo, shr, shr, shr, shr, and #0xE, put @t4
+            a: get @camera_x_hi, and #1, put @t5
+            a: get @vram_loader.code_pointer, put @t6
+            a: get @(vram_loader.code_pointer + 1), put @t7
+            call tilemap.update_attribute_buffer
+        end
+        
+        // Increment code pointer.
+        a: get @t6, put @vram_loader.code_pointer
+        a: get @t7, put @(vram_loader.code_pointer + 1)
+
+        return
+    end
+    
+
+    def buffer_column_right: begin
+        a: get @map_width, sub #1, cmp @camera_x_hi
+        if >= then
+            a: get #<tile_top_left, put @t0, get #>tile_top_left, put @t1
+            a: get @world_ptr_lo, put @t2
+            a: get @camera_x_hi, add #1, add @world_ptr_hi, put @t3
+            a: get @camera_x_lo, shr, shr, shr, put @t4
+            a: get @camera_x_hi, and #1, xor #1, put @t5
+            a: get @vram_loader.code_pointer, put @t6
+            a: get @(vram_loader.code_pointer + 1), put @t7
+            call tilemap.update_tile_buffer
+            
+            // Increment code pointer.
+            a: get @t6, put @vram_loader.code_pointer
+            a: get @t7, put @(vram_loader.code_pointer + 1)
+
+            a: get #<tile_attribute, put @t0, get #>tile_attribute, put @t1
+            a: get @world_ptr_lo, put @t2
+            a: get @camera_x_hi, add #1, add @world_ptr_hi, put @t3
+            a: get @camera_x_lo, shr, shr, shr, shr, and #0xE, put @t4
+            a: get @camera_x_hi, and #1, xor #1, put @t5
+            a: get @vram_loader.code_pointer, put @t6
+            a: get @(vram_loader.code_pointer + 1), put @t7
+            call tilemap.update_attribute_buffer
+        end
+        
+        // Increment code pointer.
+        a: get @t6, put @vram_loader.code_pointer
+        a: get @t7, put @(vram_loader.code_pointer + 1)
+
+        return
+    end
+    
+    
+    
+    
+end

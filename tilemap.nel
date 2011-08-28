@@ -1,0 +1,458 @@
+package tilemap
+    // Turns off rendering and loads a map.
+    def load: begin
+        // Argument: Tileset Pointer. Should be page-aligned (low byte of 0x00), and pointing to the top-left page of the tileset.
+        let ptr_lo = t0
+        let ptr_hi = t1
+        let ptr = ptr_lo
+        // Argument: Map Source Pointer.
+        let map_lo = t2
+        let map_hi = t3
+        let map = map_lo
+        // Argument: Nametable index 0..3
+        let nametable_index = t4
+        // Local: Current Map Source Pointer.
+        let src_lo = t5
+        let src_hi = t6
+        let src = src_lo
+        // Local: Current Column.
+        let column = t7
+        // Local: Combined Tile Attributes.
+        let combined_attr = t8
+        let TILE_ADDRESS = ppu.NAMETABLE_BASE
+        let ATTR_ADDRESS = (ppu.NAMETABLE_BASE + ppu.NAMETABLE_ATTRIBUTE)
+        
+        // Turn off the PPU.
+        a: get #0, put @ppu.ctrl, put @ppu.mask
+        // Read PPU status to reset its state.
+        a: get @ppu.status
+        // Now setup the PPU for copying tiles.
+        a: get @nametable_index, shl, shl, add #>TILE_ADDRESS, put @ppu.address, get #<TILE_ADDRESS, put @ppu.address
+        // Setup the source pointer.
+        a: get @map_lo, put @src_lo, get @map_hi, put @src_hi
+        // Initialize the loop counter.
+        x: get #0
+        repeat
+            y: get #0
+            // Move the pointer to the top-right tiles.
+            @ptr_hi: inc
+            
+            // Copy top.
+            repeat
+                // Save the column
+                y: put @column
+                // Get the metatile index for this column, and put it into y.
+                a: get @[src][y], put y
+                // Move the pointer back to the top-left tiles.
+                @ptr_hi: dec
+                a: get @[ptr][y], put @ppu.data
+                // Move ptr to the top-right tiles.
+                @ptr_hi: inc
+                a: get @[ptr][y], put @ppu.data
+                // Get the column back, and increment.
+                // If we've done this 16 times, stop -- we've finished the row.
+                y: get @column, inc, cmp #16
+            until zero
+            
+            y: get #0
+            // Move ptr to bottom-right.
+            @ptr_hi: inc, inc
+            // Copy bottom. See column_top_loop for the gist of things.
+            repeat
+                y: put @column
+                a: get @[src][y], put y
+                @ptr_hi: dec
+                a: get @[ptr][y], put @ppu.data
+                @ptr_hi: inc
+                a: get @[ptr][y], put @ppu.data
+                y: get @column, inc, cmp #16
+            until zero
+            
+            // Advance the source by one row.
+            a: get @src, add #16, put @src
+            // Move ptr back to top-left again.
+            a: get @ptr_hi, sub #3, put @ptr_hi
+            // Repeat until 15 rows have been copied.
+            x: inc, cmp #15
+        until zero
+
+        // Read PPU status to reset its state.
+        a: get @ppu.status
+        // Now setup the PPU for copying attributes.
+        a: get @nametable_index, shl, shl, add #>ATTR_ADDRESS, put @ppu.address, get #<ATTR_ADDRESS, put @ppu.address
+        // Setup the source pointer, advanced by one row.
+        a: get @map_lo, add #16, put @src_lo, get @map_hi, put @src_hi
+        // Set the pointer to attributes.
+        a: get @ptr_hi, add #4, put @ptr_hi
+        // Initialize the row counter x.
+        x: get #0
+        
+        repeat
+            y: get #0
+            repeat
+                // Save the column
+                y: put @column
+                // Decrease the source by one row.
+                a: get @src, sub #16, put @src
+                // Get the metatile index for this column, and put it into y.
+                a: get @[src][y], put y
+                // Get the attribute for this column.
+                // xxxxxxAA -> 000000AA
+                a: get @[ptr][y], and #3
+                // Save attribute.
+                a: put @combined_attr
+                
+                // Get the column back.
+                y: get @column, inc
+                // Get the metatile index for this column, and put it into y.
+                a: get @[src][y], put y
+                // Get the attribute for this column and combine with the existing attribute.
+                // xxxxxxBB -> 0000BBAA
+                a: get @[ptr][y], and #3, shl, shl, or @combined_attr
+                // Save combined attribute.
+                a: put @combined_attr
+                
+                // Advance the source by one row.
+                a: get @src, add #16, put @src
+                
+                // Get the column back.
+                y: get @column
+                // Get the metatile index for this column, and put it into y.
+                a: get @[src][y], put y
+                // Get the attribute for this column and combine with the existing attribute.
+                // xxxxxxCC -> 00CCBBAA
+                a: get @[ptr][y], and #3, shl, shl, shl, shl, or @combined_attr
+                // Save combined attribute.
+                a: put @combined_attr
+                
+                // Get the column back.
+                y: get @column, inc
+                // Get the metatile index for this column, and put it into y.
+                a: get @[src][y], put y
+                // Get the attribute for this column and combine with the existing attribute.
+                // xxxxxxDD -> 000000DD
+                a: get @[ptr][y], and #3
+                // Rotate 3 times, because rotation is 9-bit due using the carry.
+                // Unset carry, so that the first bit is 0.
+                // c:0 000000D -> c:0 DD000000
+                p: unset carry
+                a: ror, ror, ror
+                // DD000000 -> DDCCBBAA
+                a: or @combined_attr
+                // Write to PPU.
+                a: put @ppu.data
+                
+                // Get the column back, increment, and check if we've done 16 columns yet.
+                y: get @column, inc, inc, cmp #16
+                // If we have remaining columns, repeat
+            until zero
+            
+            // Advance the source by two rows.
+            a: get @src, add #32, put @src
+            // Increment the row counter.
+            x: inc, cmp #7
+            // If we have no remaining rows, we're done.
+        until zero
+        
+        y: get #0
+        // Decrease the source by one row.
+        a: get @src, sub #16, put @src
+        repeat
+            // Save the column
+            y: put @column
+            // Get the metatile index for this column, and put it into y.
+            a: get @[src][y], put y
+            // Get the attribute for this column.
+            // xxxxxxAA -> 000000AA
+            a: get @[ptr][y], and #3
+            // Save attribute.
+            a: put @combined_attr
+            
+            // Get the column back.
+            y: get @column, inc
+            // Get the metatile index for this column, and put it into y.
+            a: get @[src][y], put y
+            // Get the attribute for this column and combine with the existing attribute.
+            // xxxxxxBB -> 0000BBAA
+            a: get @[ptr][y], and #3, shl, shl, or @combined_attr
+            // Write to PPU.
+            a: put @ppu.data
+            
+            // Get the column back, increment, and check if we've done 16 columns yet.
+            y: get @column, inc, inc, cmp #16
+            // If we have remaining columns, repeat
+        until zero
+        
+        return
+    end
+    
+    
+
+    // Loads in a tile column of the map for scrolling. Buffers the tile column-loading code into memory, so it can be run on draw.
+    def update_tile_buffer: begin
+        // Argument: Tileset pointer. Should be page-aligned (low byte of 0x00), and pointing to the top-left page of the tileset.
+        let ptr_lo = t0
+        let ptr_hi = t1
+        let ptr = ptr_lo
+        // Argument: Map source pointer.
+        let map_lo = t2
+        let map_hi = t3
+        let map = map_lo
+        // Argument: Column in map.
+        let column = t4
+        // Argument: Current screen (0 .. 3).
+        let dest_screen = t5
+        // Argument: Destination pointer
+        let dest_lo = t6
+        let dest_hi = t7
+        let dest = dest_lo
+        // Local: Current tile value from source.
+        let tile = t8
+
+        // Initialize the row counter.
+        x: get #0
+        // Initialize y.
+        y: get #0
+        
+        // Ctrl flag: `get #imm, put @ppu.ctrl` (5 bytes / 6 cycles)
+        a: get #0xA9, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #ppu.CTRL_VRAM_STEP_Y, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #0x8D, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #<ppu.ctrl, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #>ppu.ctrl, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        
+        // High: `get #imm, put @ppu.address` (5 bytes / 6 cycles)
+        a: get #0xA9, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        // Use screen index N = 0 .. 3 to get (N * 4) + 0x20 for nametable high byte.
+        a: get @dest_screen, shl, shl, add #0x20, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #0x8D, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #<ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #>ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        
+        // Low: `get #imm, put @ppu.address` (5 bytes / 6 cycles)
+        a: get #0xA9, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        // Use the current column
+        a: get @column, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #0x8D, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #<ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #>ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        
+        a: get @column, and #1
+        // Odd column should draw right sides of tile, offset pointer by 1 to do so.
+        if not zero then
+            @ptr_hi: inc
+        end
+        
+        // Divide 8x8 tile column by 2 to get 16x16 column
+        @column: shr
+        
+        def loop: begin
+            // Tile: `get #imm, put @ppu.address` (5 bytes / 6 cycles)
+            y: get #0
+            a: get #0xA9, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            // Copy top tile
+            y: get @column
+            a: get @[map][y], put @tile, put y, get @[ptr][y]
+            y: get #0
+            a: put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #0x8D, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #<ppu.data, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #>ppu.data, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            
+            // Move ptr to bottom.
+            @ptr_hi: inc, inc
+
+            // Tile: `get #imm, put @ppu.address` (5 bytes / 6 cycles)
+            y: get #0
+            a: get #0xA9, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            // Copy bottom tile
+            y: get @tile
+            a: get @[ptr][y]
+            y: get #0
+            a: put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #0x8D, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #<ppu.data, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #>ppu.data, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            
+            // Move ptr back to top again.
+            @ptr_hi: dec, dec
+            // Advance the source by one row.
+            a: get @map, add #16, put @map
+            // Repeat until 15 rows have been copied.
+            x: inc, cmp #15
+            if not zero then
+                goto loop
+            end
+        end
+        
+        return
+    end
+    
+    
+    
+    // Loads in an attribute column of the map for scrolling. Buffers the attribute column-loading code into memory, so it can be run on draw.
+    def update_attribute_buffer: begin
+        // Argument: Tileset pointer. Should be page-aligned (low byte of 0x00), and pointing to the attribute page of the tileset.
+        let ptr_lo = t0
+        let ptr_hi = t1
+        let ptr = ptr_lo
+        // Argument: Map source pointer.
+        let map_lo = t2
+        let map_hi = t3
+        let map = map_lo
+        // Argument: Current column.
+        let column = t4
+        // Argument: Current screen (0 .. 3).
+        let dest_screen = t5
+        // Argument: Destination pointer
+        let dest_lo = t6
+        let dest_hi = t7
+        let dest = dest_lo
+        // Local: Current tile from source.
+        let combined_attr = t8
+        // Local: Current row offset.
+        let row_offset = t9
+
+        // Initialize the row counter.
+        x: get #0, put @row_offset
+        // Setup the nametable address.
+        a: get @dest_screen, shl, shl, add #0x23, put @dest_screen
+        
+        def loop: begin
+            y: get #0
+            // High: `get #imm, put @ppu.address` (5 bytes / 6 cycles)
+            a: get #0xA9, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            // Nametable high byte.
+            a: get @dest_screen, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #0x8D, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #<ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #>ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            
+            // Low: `get #imm, put @ppu.address` (5 bytes / 6 cycles)
+            a: get #0xA9, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            // Nametable low byte = @column + @row_offset + 0xC0
+            a: get @column, shr, add @row_offset, add #0xC0, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #0x8D, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #<ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #>ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        
+            // Get the column
+            y: get @column
+            // Get the metatile index for this column, and put it into y.
+            a: get @[map][y], put y
+            // Get the attribute for this column.
+            // xxxxxxAA -> 000000AA
+            a: get @[ptr][y], and #3
+            // Save attribute.
+            a: put @combined_attr
+            
+            // Get the column back, and go to the right of it.
+            y: get @column, inc
+            // Get the metatile index for this column, and put it into y.
+            a: get @[map][y], put y
+            // Get the attribute for this column and combine with the existing attribute.
+            // xxxxxxBB -> 0000BBAA
+            a: get @[ptr][y], and #3, shl, shl, or @combined_attr
+            // Save combined attribute.
+            a: put @combined_attr
+            
+            // Advance the source by one row.
+            a: get @map, add #16, put @map
+            
+            // Get the column back.
+            y: get @column
+            // Get the metatile index for this column, and put it into y.
+            a: get @[map][y], put y
+            // Get the attribute for this column and combine with the existing attribute.
+            // xxxxxxCC -> 00CCBBAA
+            a: get @[ptr][y], and #3, shl, shl, shl, shl, or @combined_attr
+            // Save combined attribute.
+            a: put @combined_attr
+            
+            // Get the column back, and go to the right of it.
+            y: get @column, inc
+            // Get the metatile index for this column, and put it into y.
+            a: get @[map][y], put y
+            // Get the attribute for this column and combine with the existing attribute.
+            // xxxxxxDD -> 000000DD
+            a: get @[ptr][y], and #3
+            // Rotate 3 times, because rotation is 9-bit due using the carry.
+            // Unset carry, so that the first bit is 0.
+            // c:0 000000D -> c:0 DD000000
+            p: unset carry
+            a: ror, ror, ror
+            // DD000000 -> DDCCBBAA
+            a: or @combined_attr
+            // Save combined attribute.
+            a: put @combined_attr
+
+            // Write attribute: `get #imm, put @ppu.address` (5 bytes / 6 cycles)
+            y: get #0
+            a: get #0xA9, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            // Copy attribute.
+            a: get @combined_attr, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #0x8D, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #<ppu.data, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            a: get #>ppu.data, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+            
+            // Advance the source by one row.
+            a: get @map, add #16, put @map
+            // Increment offset by 32, which is the next attribute row.
+            a: get @row_offset, add #8, put @row_offset
+            // Increment the row counter.
+            x: inc, cmp #7
+            // If we still have remaining rows, repeat.
+            if not zero then
+                goto loop
+            end
+        end
+
+        y: get #0
+        // High: `get #imm, put @ppu.address` (5 bytes / 6 cycles)
+        a: get #0xA9, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        // Nametable high byte.
+        a: get @dest_screen, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #0x8D, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #<ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #>ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        
+        // Low: `get #imm, put @ppu.address` (5 bytes / 6 cycles)
+        a: get #0xA9, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        // Nametable low byte = @column + @row (row is a multiple of 32)
+        a: get @column, shr, add @row_offset, add #0xC0, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #0x8D, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #<ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #>ppu.address, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        
+        // Get the column
+        y: get @column
+        // Get the metatile index for this column, and put it into y.
+        a: get @[map][y], put y
+        // Get the attribute for this column.
+        // xxxxxxAA -> 000000AA
+        a: get @[ptr][y], and #3
+        // Save attribute.
+        a: put @combined_attr
+        
+        // Get the column back, and go to the right of it.
+        y: get @column, inc
+        // Get the metatile index for this column, and put it into y.
+        a: get @[map][y], put y
+        // Get the attribute for this column and combine with the existing attribute.
+        // xxxxxxBB -> 0000BBAA
+        a: get @[ptr][y], and #3, shl, shl, or @combined_attr
+        // Save attribute.
+        a: put @combined_attr
+
+        // Write attribute: `get #imm, put @ppu.address` (5 bytes / 6 cycles)
+        y: get #0
+        a: get #0xA9, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        // Copy attribute.
+        a: get @combined_attr, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #0x8D, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #<ppu.data, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        a: get #>ppu.data, put @[dest][y]; @dest: inc; if zero then @(dest + 1): inc; end
+        
+        return
+    end
+end

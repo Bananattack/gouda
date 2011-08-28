@@ -1,0 +1,226 @@
+package sprite
+    // Loads a metasprite at the coordinates given, possibly flipping it.
+    def load: begin
+        // Parameters.
+        let src_lo = t0
+        let src_hi = t1
+        let src = src_lo
+        let dest_x_lo = t2
+        let dest_x_hi = t3
+        let dest_y_lo = t4
+        let dest_y_hi = t5
+        let dest_flip = t6
+        let dest_lo = t7
+        let dest_hi = t8
+        let dest = dest_lo
+        // Locals.
+        let count = t9
+        let flip_offset = t10
+        let tmp_lo = t11
+        let tmp_hi = t12
+        let tmp = tmp_lo
+        let camera_x2_hi = t13
+        let camera_y2_hi = t14
+        
+        y: get #0
+        // Get the sprite count for this frame.
+        a: get @[src][y], put @count
+        y: inc
+        // Get the offset of this frame when flipped
+        a: get @[src][y], put @flip_offset
+        y: inc
+        // src = *(src + 2), using tmp as a temporary spot for the low byte.
+        a: get @[src][y], put @tmp
+        y: inc
+        a: get @[src][y], put @src_hi
+        a: get @tmp, put @src_lo
+        
+        // Setup the x2/y2 of the camera region.
+        y: get @camera_x_hi, inc, put @camera_x2_hi
+        y: get @camera_y_hi, inc, put @camera_y2_hi
+        
+        y: get #0
+        a: get @dest_flip
+        def copy_normal: begin
+            if not zero then
+                goto copy_flipped
+            end
+            // Copy the sprites.
+            repeat
+                def copy_y: begin
+                    // Calculate position for this particular sprite in the metasprite
+                    a: get @dest_y_lo, add @[src][y], put @tmp_lo
+                    a: get @dest_y_hi, addc #0, put @tmp_hi
+                    a: get @tmp_lo
+                    // Reject if position < camera position
+                    x: get @tmp_hi, cmp @camera_y_hi
+                    goto failure when <
+                    if = then
+                        a: cmp @camera_y_lo
+                        goto failure when < // If the low byte
+                    end
+
+                    // Reject if position >= camera position + screen size
+                    x: cmp @camera_y2_hi
+                    if >= then
+                        goto failure when <> // If the high byte is strictly greater, then the whole number is >=. reject.
+                        // If we are =, we need to check the low byte also.
+                        a: cmp @camera_y_lo
+                        goto failure when >= // If the low byte is >=, reject.
+                    end
+
+                    // Success!
+                    a: sub @camera_y_lo, put @[dest][y]
+                    y: inc
+                    goto copy_tile
+                    
+                    def failure:
+                        // Write in an off-screen position, so this sprite won't get shown.
+                        a: get #0xFF, put @[dest][y]
+                        // Seek past this sprite.
+                        y: inc, inc, inc
+                        goto post_condition
+                end
+                def copy_tile:
+                    a: get @[src][y], put @[dest][y]
+                    y: inc
+                def copy_attr:
+                    a: get @[src][y], put @[dest][y]
+                    y: inc
+                def copy_x: begin
+                    // Calculate position for this particular sprite in the metasprite
+                    a: get @dest_x_lo, add @[src][y], put @tmp_lo
+                    a: get @dest_x_hi, addc #0, put @tmp_hi
+                    a: get @tmp_lo
+
+                    // Reject if position < camera position
+                    x: get @tmp_hi, cmp @camera_x_hi
+                    goto failure when <
+                    if = then
+                        a: cmp @camera_x_lo
+                        goto failure when < // If the low byte
+                    end
+                    
+                    // Reject if position >= camera position + screen size
+                    x: cmp @camera_x2_hi
+                    if >= then
+                        goto failure when <> // If the high byte is strictly greater, then the whole number is >=. reject.
+                        // If we are =, we need to check the low byte also.
+                        a: cmp @camera_x_lo
+                        goto failure when >= // If the low byte is >=, reject.
+                    end
+
+                    // Success!
+                    a: sub @camera_x_lo, put @[dest][y]
+                    goto post_condition
+                    
+                    def failure:
+                        // Seek back to write to the sprite's y coordinate.
+                        y: dec, dec, dec
+                        // Write in an off-screen position, so this sprite won't get shown.
+                        a: get #0xFF, put @[dest][y]
+                        // Seek past this sprite.
+                        y: inc, inc, inc
+                        //goto post_condition
+                end
+                def post_condition:
+                    y: inc, cmp @count
+            until =
+            
+            return
+        end
+        def copy_flipped: begin
+            a: get @flip_offset, add @dest_x_lo, put @flip_offset
+            // Copy the sprites.
+            repeat
+                def copy_y: begin
+                    a: get @dest_y_lo, add @[src][y]
+                    x: get @dest_y_hi, cmp @camera_y_hi
+                    
+                    // If this room is not equal, it might be partially on-screen, let's find out.
+                    if <> then
+                        // If this metasprite's room is below the camera's room, clip this (it's fully offscreen).
+                        goto failure when >=
+                        // Check if this room is the one directly above the camera's room.
+                        x: inc, cmp @camera_y_hi
+                        // If it's not part of a metasprite in the adjacent room, then it's definitely too far. Don't draw.
+                        goto failure when <>
+                        // Compare this sprite's coordinate to its metasprite's coordinate
+                        a: cmp @dest_y_lo
+                        // If this sprite's coordinate is greater than the metasprite's coordinate,
+                        // it's in the same room as the off-screen metasprite, and thus must be off-screen also.
+                        goto failure when >=
+                        // Success!
+                    else
+                        // Compare this sprite's coordinate to its metasprite's coordinate
+                        a: cmp @dest_y_lo
+                        // If this sprite's coordinate is greater than the metasprite's coordinate,
+                        // it's in the different room than the on-screen metasprite, and thus must be off-screen.
+                        goto failure when <
+                        // Success!
+                    end
+                       
+                    a: put @[dest][y]
+                    y: inc
+                    goto copy_tile
+ 
+                    def failure:
+                        // Write in an off-screen position, so this sprite won't get shown.
+                        a: get #0xFF, put @[dest][y]
+                        // Seek past this sprite.
+                        y: inc, inc, inc
+                        goto post_condition
+                end
+                def copy_tile:
+                    a: get @[src][y], put @[dest][y]
+                    y: inc
+                def copy_attr:
+                    a: get @[src][y], xor #0x40, put @[dest][y]
+                    y: inc
+                def copy_x: begin
+                    a: get @flip_offset, sub @[src][y]
+                    x: get @dest_x_hi, cmp @camera_x_hi
+                    
+                    // If this room is not equal, it might be partially on-screen, let's find out.
+                    if <> then
+                        // If this metasprite's room is to the right of the camera's room, clip this (it's fully offscreen).
+                        goto failure when >=
+                        // Check if this room is the one directly to the left of the camera's room.
+                        x: inc, cmp @camera_x_hi
+                        // If it's not part of a metasprite in the adjacent room, then it's definitely too far. Don't draw.
+                        goto failure when <>
+                        // Compare this sprite's coordinate to its metasprite's coordinate
+                        a: cmp @dest_x_lo
+                        // If this sprite's coordinate is greater than the metasprite's coordinate,
+                        // it's in the same room as the off-screen metasprite, and thus must be off-screen also.
+                        goto failure when >=
+                        // Success!
+                    else
+                        // Compare this sprite's coordinate to its metasprite's coordinate
+                        a: cmp @dest_x_lo
+                        // If this sprite's coordinate is greater than the metasprite's coordinate,
+                        // it's in the different room than the on-screen metasprite, and thus must be off-screen.
+                        goto failure when <
+                        // Success!
+                    end
+                    
+                    a: put @[dest][y]
+                    goto post_condition
+                        
+                    def failure:
+                        // Seek back to write to the sprite's y coordinate.
+                        y: dec, dec, dec
+                        // Write in an off-screen position, so this sprite won't get shown.
+                        a: get #0xFF, put @[dest][y]
+                        // Seek past this sprite.
+                        y: inc, inc, inc
+                        //goto post_condition
+                end
+                def post_condition:
+                    y: inc, cmp @count
+            until =
+            
+            return
+        end
+    end
+end

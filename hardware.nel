@@ -1,0 +1,184 @@
+package ppu
+    package oam
+        let address : word = 0x2003
+        let data : word = 0x2004
+        let dma : word = 0x4014
+
+        enum:
+            ATTRIBUTE_PAL_0,
+            ATTRIBUTE_PAL_1,
+            ATTRIBUTE_PAL_2,
+            ATTRIBUTE_PAL_3,
+            // 0x04, 0x8, 0x10 are unused
+            ATTRIBUTE_BEHIND = 0x20,
+            ATTRIBUTE_HFLIP = 0x40,
+            ATTRIBUTE_VFLIP = 0x80
+    end
+
+    let ctrl : word = 0x2000
+    let mask : word = 0x2001
+    let status : word = 0x2002
+    // oam stuff in separate package.
+    let scroll : word = 0x2005
+    let address : word = 0x2006
+    let data : word = 0x2007
+    
+    enum:
+        CTRL_NAMETABLE_0,
+        CTRL_NAMETABLE_1,
+        CTRL_NAMETABLE_2,
+        CTRL_NAMETABLE_3,
+        CTRL_VRAM_STEP_X = 0x00,
+        CTRL_VRAM_STEP_Y = 0x04,
+        CTRL_SPRITE_PATTERN_0 = 0x00,
+        CTRL_SPRITE_PATTERN_1 = 0x08,
+        CTRL_BG_PATTERN_0 = 0x00,
+        CTRL_BG_PATTERN_1 = 0x10,
+        CTRL_SPRITE_8x8 = 0x00,
+        CTRL_SPRITE_8x16 = 0x20,
+        // ppu ctrl flag 0x40 is unused
+        CTRL_DISABLE = 0x00,
+        CTRL_NMI = 0x80
+
+    enum:
+        MASK_GREYSCALE = 0x01,
+        MASK_LEFTMOST_BG = 0x02,
+        MASK_LEFTMOST_SPRITES = 0x04,
+        MASK_RENDER_BG = 0x08,
+        MASK_RENDER_SPRITES = 0x10,
+        MASK_INTENSIFY_R = 0x20,
+        MASK_INTENSIFY_G = 0x40,
+        MASK_INTENSIFY_B = 0x80
+    
+    enum:
+        // ppu status flags 0x00..0x10 are unused
+        STATUS_SPRITE_OVERFLOW = 0x20,
+        STATUS_SPRITE_ZERO_HIT = 0x40,
+        STATUS_VBLANK = 0x80
+
+    // Base nametable address
+    let NAMETABLE_BASE : word = 0x2000
+    // Offset to the attribute section of a nametable
+    let NAMETABLE_ATTRIBUTE : word = 0x3C0
+    // Size of each nametable in bytes.
+    let NAMETABLE_SIZE : word = 0x400
+    // Total number of nametables.
+    let NAMETABLE_TOTAL : byte = 4
+    
+    // Base palette address.
+    let PALETTE_BASE : word = 0x3F00
+    // Size of each palette in bytes.
+    let PALETTE_SIZE : byte = 0x04
+    // Total number of palettes.
+    let PALETTE_TOTAL : byte = 8
+end
+
+package apu
+    package square1
+        let ctrl = 0x4000
+        let sweep = 0x4001
+        let low = 0x4002
+        let high = 0x4003
+    end
+    
+    package square2
+        let ctrl = 0x4004
+        let sweep = 0x4005
+        let low = 0x4006
+        let high = 0x4007
+    end
+    
+    package triangle
+        let ctrl = 0x4008
+        // triangle register 0x4009 is unused
+        let low = 0x400A
+        let high = 0x400B
+    end
+    
+    package noise
+        let ctrl = 0x400C
+        // noise register 0x400D is unused
+        let random = 0x400E
+        let length = 0x400F
+    end
+    
+    let flag = 0x4015
+    let sequencer = 0x4017
+    
+    enum:
+        FLAG_SQUARE1 = 0x01,
+        FLAG_SQUARE2 = 0x02,
+        FLAG_TRIANGLE = 0x04,
+        FLAG_NOISE = 0x08,
+        FLAG_DMC_RESTART = 0x10,
+        // apu flag 0x20 is unused.
+        FLAG_FRAME_IRQ = 0x40,
+        FLAG_DMC_IRQ = 0x80
+    
+    enum:
+        SEQUENCER_FOUR_STEP = 0x00,
+        SEQUENCER_FIVE_STEP = 0x40,
+        SEQUENCER_DISABLE_IRQ = 0x80
+end
+
+package joy
+    let out = 0x4016
+    let in1 = 0x4016
+    let in2 = 0x4017
+    
+    enum:
+        A = 0x01,
+        B = 0x02,
+        SELECT = 0x04,
+        START = 0x08,
+        UP = 0x10,
+        DOWN = 0x20,
+        LEFT = 0x40,
+        RIGHT = 0x80
+end
+
+package mmc3
+    package irq
+        // This register specifies the IRQ counter reload value.
+        // When the IRQ counter is zero (or a reload is requested through 0xC001),
+        // this value will be copied into the MMC3 IRQ counter at
+        // the end of the current scanline
+        let latch = 0xC000
+        
+        // Writing any value to this register clears the MMC3 IRQ counter
+        // so that it will be reloaded at the end of the current scanline.
+        let reload = 0xC001
+        
+        // Writing any value to this register will disable MMC3 interrupts
+        // AND acknowledge any pending interrupts.
+        let disable = 0xE000
+        
+        // Writing any value to this register will enable MMC3 interrupts.
+        let enable = 0xE001
+    end
+    
+    let select = 0x8000
+    let data = 0x8001
+    let mirror = 0xA000
+    let wram = 0xA001
+    
+    enum:
+        SELECT_2K_CHR_00,
+        SELECT_2K_CHR_08,
+        SELECT_1K_CHR_10,
+        SELECT_1K_CHR_14,
+        SELECT_1K_CHR_18,
+        SELECT_1K_CHR_1C,
+        SELECT_8K_PRG_80,
+        SELECT_8K_PRG_A0,
+        SELECT_PRG_SWAP = 0x40,
+        SELECT_CHR_SWAP = 0x80
+        
+    enum:
+        MIRROR_VERTICAL,
+        MIRROR_HORIZONTAL
+    
+    enum:
+        WRAM_READONLY = 0x40,
+        WRAM_ENABLE = 0x80
+end

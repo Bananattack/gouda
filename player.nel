@@ -1,0 +1,57 @@
+package player
+    def update: begin
+        a: get @controls, and #joy.LEFT
+        if not zero then
+            a: get @player_x_hi
+            if zero then
+                a: get @player_x_lo
+                if not zero then
+                    @player_x_lo: dec
+                end                    
+            else
+                a: get @player_x_lo
+                if zero then
+                    @player_x_hi: dec
+                end
+                @player_x_lo: dec
+            end
+        else
+            a: get @controls, and #joy.RIGHT
+            if not zero then
+                a: get @player_x_hi, add #1, cmp @map_width
+                if < then
+                    @player_x_lo: inc
+                    if zero then
+                        @player_x_hi: inc
+                    end
+                else
+                    a: get #0, sub @(sprite.hero.frames + 1), cmp @player_x_lo
+                    if >= then
+                        @player_x_lo: inc
+                    end
+                end
+            end
+        end
+        
+        return
+    end
+    
+    // Draw the player
+    def draw: begin
+        a: get #<sprite.hero.frames, put @t0
+        a: get #>sprite.hero.frames, put @t1
+        a: get @player_x_lo, put @t2
+        a: get @player_x_hi, put @t3
+        a: get @player_y_lo, put @t4
+        a: get @player_y_hi, put @t5
+        a: get #0, put @t6
+        a: get @sprite_index, put @t7
+        a: get #>sprite_buffer, put @t8
+        
+        // Increment next sprite index by the size of a frame.
+        y: get #0; a: get @sprite_index, add @[t0][y], put @sprite_index
+        
+        // Load the sprite.
+        goto sprite.load
+    end
+end
